@@ -5,3 +5,6 @@ venv/
 .env
 # Stored payment details (Binance IDs, etc.) — never commit
 payments.json
+# Runtime logs / output from the control panel
+bot.log
+panel.out

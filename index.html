@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram Bot Control</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --fg: #1b1f24; --muted: #6b7280;
+    --border: #e2e5ea; --accent: #2563eb; --accent-fg: #ffffff;
+    --ok: #16a34a; --ok-bg: #dcfce7; --stop: #dc2626; --stop-bg: #fee2e2;
+    --idle: #6b7280; --idle-bg: #eef0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --card: #171b21; --fg: #e6e9ee; --muted: #9aa4b2;
+      --border: #262c34; --accent: #3b82f6; --accent-fg: #ffffff;
+      --ok: #4ade80; --ok-bg: #10331f; --stop: #f87171; --stop-bg: #3a1414;
+      --idle: #9aa4b2; --idle-bg: #21262e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: flex-start;
+    justify-content: center; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 40px 16px;
+  }
+  .card {
+    width: 100%; max-width: 520px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13.5px; }
+  .status {
+    display: flex; align-items: center; gap: 9px; padding: 12px 14px;
+    border-radius: 10px; background: var(--idle-bg); color: var(--idle);
+    font-weight: 600; margin-bottom: 20px;
+  }
+  .status .dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex: none; }
+  .status.running { background: var(--ok-bg); color: var(--ok); }
+  .status.error { background: var(--stop-bg); color: var(--stop); }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input[type=password], input[type=text] {
+    width: 100%; padding: 11px 12px; border: 1px solid var(--border);
+    border-radius: 9px; background: var(--bg); color: var(--fg); font-size: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  button {
+    flex: 1; padding: 11px 14px; border: 0; border-radius: 9px; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: opacity .15s;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-start { background: var(--accent); color: var(--accent-fg); }
+  .btn-stop { background: var(--stop); color: #fff; }
+  .msg { margin-top: 14px; font-size: 13.5px; min-height: 1.2em; }
+  .msg.err { color: var(--stop); white-space: pre-wrap; }
+  .msg.ok { color: var(--ok); }
+  details { margin-top: 20px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  pre {
+    margin: 10px 0 0; padding: 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 9px; font-size: 12px; max-height: 240px; overflow: auto;
+    white-space: pre-wrap; word-break: break-word; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🤖 Telegram Bot Control</h1>
+    <p class="sub">Paste your bot token to start the bot. Nothing is stored on disk.</p>
+
+    <div id="status" class="status"><span class="dot"></span><span id="statusText">Checking…</span></div>
+
+    <label for="token">Bot token (from @BotFather)</label>
+    <input id="token" type="password" placeholder="123456789:AA…" autocomplete="off" spellcheck="false">
+    <div class="row">
+      <button id="startBtn" class="btn-start">Start bot</button>
+      <button id="stopBtn" class="btn-stop">Stop bot</button>
+    </div>
+    <div id="msg" class="msg"></div>
+
+    <details>
+      <summary>Recent bot log</summary>
+      <pre id="log">—</pre>
+    </details>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const statusEl = $('status'), statusText = $('statusText');
+const startBtn = $('startBtn'), stopBtn = $('stopBtn');
+const tokenInput = $('token'), msg = $('msg'), logEl = $('log');
+let busy = false;
+
+function render(s) {
+  const running = s.running;
+  statusEl.className = 'status' + (running ? ' running' : (s.last_error ? ' error' : ''));
+  statusText.textContent = running
+    ? 'Running — @' + (s.username || 'bot')
+    : (s.last_error ? 'Stopped (last error)' : 'Stopped');
+  startBtn.disabled = busy || running;
+  stopBtn.disabled = busy || !running;
+  tokenInput.disabled = busy || running;
+  logEl.textContent = s.log && s.log.trim() ? s.log : '—';
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/status', { cache: 'no-store' });
+    render(await r.json());
+  } catch (e) { statusText.textContent = 'Panel unreachable'; }
+}
+
+async function post(path, body) {
+  busy = true; render({ running: !stopBtn.disabled });
+  msg.className = 'msg'; msg.textContent = 'Working…';
+  try {
+    const r = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+    const data = await r.json();
+    if (data.ok) {
+      msg.className = 'msg ok';
+      msg.textContent = path === '/start'
+        ? '✅ Started as @' + data.username
+        : '🛑 Bot stopped';
+      if (path === '/start') tokenInput.value = '';
+    } else {
+      msg.className = 'msg err';
+      msg.textContent = '⚠️ ' + (data.error || 'Failed');
+    }
+  } catch (e) {
+    msg.className = 'msg err'; msg.textContent = '⚠️ ' + e;
+  } finally {
+    busy = false; await refresh();
+  }
+}
+
+startBtn.onclick = () => {
+  const token = tokenInput.value.trim();
+  if (!token) { msg.className = 'msg err'; msg.textContent = '⚠️ Enter a token first'; return; }
+  post('/start', { token });
+};
+stopBtn.onclick = () => post('/stop');
+tokenInput.addEventListener('keydown', e => { if (e.key === 'Enter') startBtn.click(); });
+
+refresh();
+setInterval(() => { if (!busy) refresh(); }, 3000);
+</script>
+</body>
+</html>

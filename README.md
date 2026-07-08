@@ -31,10 +31,38 @@ script, git-ignored) so they survive restarts.
 ## Setup
 
 ```bash
-pip install -r requirements.txt          # add --break-system-packages, or use a venv
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
 export BOT_TOKEN="<your-telegram-bot-token>"
-python3 bot.py
+venv/bin/python bot.py
 ```
 
 The bot token is read from the `BOT_TOKEN` (or `TELEGRAM_BOT_TOKEN`)
 environment variable — it is never hard-coded.
+
+## Web control panel (enter the token in a browser)
+
+Instead of setting `BOT_TOKEN` yourself, run the control panel and paste the
+token into a web page. It validates the token against Telegram, then launches
+`bot.py` for you (Start / Stop / status + recent log).
+
+```bash
+# deps for the bot must be installed in ./venv (see Setup above)
+PANEL_PASSWORD="choose-a-strong-password" python3 control.py --host 0.0.0.0 --port 8080
+```
+
+- `control.py` uses only the Python standard library — no extra deps.
+- Open `http://<server-ip>:8080`, log in (username `admin`, the password you
+  set), paste the token, click **Start bot**.
+- The token is passed to `bot.py` via its environment and is **never written to
+  disk**.
+- Protected by HTTP Basic Auth. If `--password`/`PANEL_PASSWORD` is omitted, a
+  random password is printed at startup.
+
+**Security:** this is plain HTTP with no TLS, so the login and token travel in
+cleartext. Only expose port 8080 on a trusted network, or keep it on localhost
+and reach it through an SSH tunnel:
+
+```bash
+ssh -L 8080:localhost:8080 user@server   # then open http://localhost:8080
+```
