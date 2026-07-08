@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+.env
+# Stored payment details (Binance IDs, etc.) — never commit
+payments.json
