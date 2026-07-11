@@ -5,6 +5,10 @@ venv/
 .env
 # Stored payment details (Binance IDs, etc.) — never commit
 payments.json
+# Panel data: bot registry (contains tokens!), per-bot data + logs
+data/
 # Runtime logs / output from the control panel
 bot.log
 panel.out
+# Claude Code local settings
+.claude/settings.local.json*

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger Bots — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="/"><span class="mark">L</span>Ledger Bots</a>
+  <span class="crumb">/</span>
+  <span class="section">Admin</span>
+  <span class="spacer"></span>
+  <a class="link" href="/">Public panel</a>
+</nav>
+
+<main class="wide">
+  <h1>Bot approvals</h1>
+  <p class="lede">
+    Review submitted bots. Approved bots run the shared ledger code as their
+    own isolated process and restart automatically if they crash.
+  </p>
+
+  <div class="tiles">
+    <div class="tile"><div class="num" id="nPending">–</div><div class="lbl">Pending</div></div>
+    <div class="tile"><div class="num" id="nRunning">–</div><div class="lbl">Running</div></div>
+    <div class="tile"><div class="num" id="nTotal">–</div><div class="lbl">Total</div></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Bot</th>
+          <th>Token</th>
+          <th>Submitted</th>
+          <th>Status</th>
+          <th style="text-align:right">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="5" class="empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const rows = document.getElementById('rows');
+const openLogs = new Set();   // bot ids with an expanded log row
+let busy = false;
+
+function fmtUptime(s) {
+  if (s == null) return '';
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+  return Math.floor(s / 86400) + 'd ' + Math.floor((s % 86400) / 3600) + 'h';
+}
+
+function lozenge(bot) {
+  const live = bot.status === 'approved' && bot.running;
+  const map = {
+    pending:  ['lz-pending', 'Pending'],
+    approved: live ? ['lz-live', 'Live'] : ['lz-starting', 'Starting'],
+    rejected: ['lz-rejected', 'Rejected'],
+    paused:   ['lz-paused', 'Paused'],
+    failed:   ['lz-failed', 'Failed'],
+  };
+  const [cls, label] = map[bot.status] || ['lz-paused', bot.status];
+  return `<span class="lozenge ${cls}">${label}</span>`;
+}
+
+function actionButtons(bot) {
+  const b = [];
+  const btn = (act, label, cls, confirmMsg) =>
+    `<button class="btn btn-sm ${cls}" data-act="${act}" data-id="${bot.id}"${confirmMsg ? ` data-confirm="${confirmMsg}"` : ''}>${label}</button>`;
+  if (bot.status === 'pending') {
+    b.push(btn('approve', 'Approve', 'btn-primary'));
+    b.push(btn('reject', 'Reject', 'btn-danger'));
+  } else if (bot.status === 'approved') {
+    b.push(btn('log', 'Logs', 'btn-subtle'));
+    b.push(btn('pause', 'Pause', 'btn-subtle'));
+  } else if (bot.status === 'paused') {
+    b.push(btn('approve', 'Resume', 'btn-primary'));
+    b.push(btn('log', 'Logs', 'btn-subtle'));
+  } else if (bot.status === 'failed') {
+    b.push(btn('approve', 'Retry', 'btn-primary'));
+    b.push(btn('log', 'Logs', 'btn-subtle'));
+  } else if (bot.status === 'rejected') {
+    b.push(btn('approve', 'Approve', 'btn-subtle'));
+  }
+  b.push(btn('delete', 'Delete', 'btn-danger', 'Delete @' + bot.username + ' and all of its data?'));
+  return b.join('');
+}
+
+function render(bots) {
+  document.getElementById('nPending').textContent = bots.filter(b => b.status === 'pending').length;
+  document.getElementById('nRunning').textContent = bots.filter(b => b.running).length;
+  document.getElementById('nTotal').textContent = bots.length;
+
+  if (!bots.length) {
+    rows.innerHTML = '<tr><td colspan="5" class="empty">No bots submitted yet. Share the public panel link to get started.</td></tr>';
+    return;
+  }
+
+  rows.innerHTML = bots.map(bot => {
+    const up = bot.running ? `<span class="sub">up ${fmtUptime(bot.uptime)}</span>` : '';
+    let html = `
+      <tr>
+        <td>
+          <span class="dot ${bot.running ? 'on' : 'off'}"></span>
+          <span class="bot-name">@${bot.username}</span>
+        </td>
+        <td class="mono">${bot.token_masked}</td>
+        <td><span class="sub">${bot.submitted_at}</span></td>
+        <td>${lozenge(bot)} ${up}</td>
+        <td><div class="actions">${actionButtons(bot)}</div></td>
+      </tr>`;
+    if (openLogs.has(bot.id)) {
+      html += `<tr class="logrow" data-log-for="${bot.id}"><td colspan="5"><pre class="log" id="log-${bot.id}">Loading…</pre></td></tr>`;
+    }
+    return html;
+  }).join('');
+
+  openLogs.forEach(loadLog);
+}
+
+async function loadLog(id) {
+  const el = document.getElementById('log-' + id);
+  if (!el) return;
+  try {
+    const r = await fetch(`/api/admin/bots/${id}/log`, { cache: 'no-store' });
+    const data = await r.json();
+    el.textContent = (data.log && data.log.trim()) ? data.log : '(no log output yet)';
+    el.scrollTop = el.scrollHeight;
+  } catch (e) { el.textContent = 'Could not load log: ' + e; }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/admin/bots', { cache: 'no-store' });
+    const data = await r.json();
+    if (data.ok) render(data.bots);
+  } catch (e) { /* transient; next poll will recover */ }
+}
+
+rows.addEventListener('click', async e => {
+  const el = e.target.closest('button[data-act]');
+  if (!el || busy) return;
+  const { act, id, confirm: confirmMsg } = el.dataset;
+
+  if (act === 'log') {
+    const bid = Number(id);
+    openLogs.has(bid) ? openLogs.delete(bid) : openLogs.add(bid);
+    refresh();
+    return;
+  }
+  if (confirmMsg && !window.confirm(confirmMsg)) return;
+
+  busy = true;
+  el.disabled = true;
+  try {
+    const r = await fetch(`/api/admin/bots/${id}/${act}`, { method: 'POST' });
+    const data = await r.json();
+    if (!data.ok) alert(data.error || 'Action failed');
+    if (act === 'delete') openLogs.delete(Number(id));
+  } catch (err) {
+    alert('Request failed: ' + err);
+  } finally {
+    busy = false;
+    refresh();
+  }
+});
+
+refresh();
+setInterval(() => { if (!busy) refresh(); }, 5000);
+</script>
+</body>
+</html>

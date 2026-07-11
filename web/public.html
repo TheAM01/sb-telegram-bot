@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger Bots — Run your own payment ledger bot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <a class="brand" href="/"><span class="mark">L</span>Ledger Bots</a>
+  <span class="spacer"></span>
+  <a class="link" href="/admin">Admin</a>
+</nav>
+
+<main>
+  <h1>Run your own payment ledger bot</h1>
+  <p class="lede">
+    Submit your Telegram bot token below — no account needed. Once an
+    administrator approves it, your bot goes live running the shared ledger
+    code: running totals, payment details, the same commands for every bot.
+  </p>
+
+  <div class="card">
+    <label for="token">Bot token &nbsp;·&nbsp; from @BotFather</label>
+    <input id="token" type="text" placeholder="123456789:AA…" autocomplete="off" spellcheck="false">
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button id="submitBtn" class="btn btn-primary">Submit for approval</button>
+      <button id="statusBtn" class="btn btn-subtle">Check status</button>
+    </div>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <h2>How it works</h2>
+  <div class="steps">
+    <div class="step">
+      <span class="n">1</span>
+      <h3>Create a bot</h3>
+      <p>Message <span class="mono">@BotFather</span> on Telegram, run
+      <span class="mono">/newbot</span>, and copy the token it gives you.</p>
+    </div>
+    <div class="step">
+      <span class="n">2</span>
+      <h3>Submit the token</h3>
+      <p>Paste it above. We verify it with Telegram and queue it for review.
+      Check back any time with the same token.</p>
+    </div>
+    <div class="step">
+      <span class="n">3</span>
+      <h3>Get approved</h3>
+      <p>An administrator reviews the submission. Once approved, your bot is
+      live within seconds — add it to your group and go.</p>
+    </div>
+  </div>
+
+  <h2>What your bot will do</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:38%">Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">&lt;numbers / expressions&gt;</td><td>Any message with numbers or math (one per line) is added to the group's running total.</td></tr>
+        <tr><td class="mono">0</td><td>Show the current remaining amount.</td></tr>
+        <tr><td class="mono">/paid</td><td>Mark the running total as paid and reset it to 0.</td></tr>
+        <tr><td class="mono">/setpayment &lt;method&gt; &lt;details&gt;</td><td>Save or update a payment method for the chat.</td></tr>
+        <tr><td class="mono">/payment</td><td>Show all saved payment details for the chat.</td></tr>
+        <tr><td class="mono">/delpayment &lt;method&gt;</td><td>Remove a saved payment method.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<footer>
+  Your token is verified with Telegram and stored only so your bot can be
+  started for you. Each bot's data is isolated from every other bot.
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const tokenInput = $('token'), msg = $('msg');
+const submitBtn = $('submitBtn'), statusBtn = $('statusBtn');
+
+const STATUS_TEXT = {
+  pending:  ['Pending review', 'Your bot is queued. An administrator will review it shortly — check back with the same token.', 'lz-pending'],
+  approved: ['Approved', 'Your bot is approved and running. Add it to a Telegram group and start using it.', 'lz-live'],
+  rejected: ['Rejected', 'This submission was declined by an administrator.', 'lz-rejected'],
+  paused:   ['Paused', 'Your bot was approved but is currently paused by an administrator.', 'lz-paused'],
+  failed:   ['Error', 'Your bot could not be started. It may have an invalid or revoked token — regenerate it with @BotFather and resubmit.', 'lz-failed'],
+};
+
+function show(kind, title, detail) {
+  msg.className = 'msg show' + (kind === 'err' ? ' err' : '');
+  msg.innerHTML = '';
+  const t = document.createElement('div');
+  t.className = 'title';
+  t.textContent = title;
+  msg.appendChild(t);
+  if (detail) {
+    const d = document.createElement('div');
+    d.className = 'detail';
+    d.textContent = detail;
+    msg.appendChild(d);
+  }
+}
+
+function showBot(bot, already) {
+  const [label, detail, lz] = STATUS_TEXT[bot.status] || [bot.status, '', 'lz-paused'];
+  const live = bot.status === 'approved' && bot.running;
+  msg.className = 'msg show';
+  msg.innerHTML = '';
+  const t = document.createElement('div');
+  t.className = 'title';
+  const chip = document.createElement('span');
+  chip.className = 'lozenge ' + (live ? 'lz-live' : lz);
+  chip.textContent = live ? 'Live' : label;
+  t.appendChild(chip);
+  t.appendChild(document.createTextNode('@' + bot.username));
+  msg.appendChild(t);
+  const d = document.createElement('div');
+  d.className = 'detail';
+  d.textContent = (already ? 'This bot was already submitted. ' : '') + detail;
+  msg.appendChild(d);
+}
+
+function busy(b) { submitBtn.disabled = statusBtn.disabled = b; }
+
+async function call(method, url, body) {
+  busy(true);
+  show('', 'Working…');
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await r.json();
+    if (data.ok) showBot(data.bot, data.already);
+    else show('err', 'Something went wrong', data.error || 'Request failed');
+  } catch (e) {
+    show('err', 'Network error', String(e));
+  } finally {
+    busy(false);
+  }
+}
+
+function token() {
+  const t = tokenInput.value.trim();
+  if (!t) { show('err', 'Enter your bot token first'); return null; }
+  return t;
+}
+
+submitBtn.onclick = () => { const t = token(); if (t) call('POST', '/api/submit', { token: t }); };
+statusBtn.onclick = () => { const t = token(); if (t) call('GET', '/api/status?token=' + encodeURIComponent(t)); };
+tokenInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
+</script>
+</body>
+</html>

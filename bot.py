@@ -19,10 +19,13 @@ logging.getLogger("apscheduler").setLevel(logging.WARNING)
 # Running total for each group
 group_totals = {}
 
-# Payment details are stored per-chat in a JSON file next to this script so
-# they survive bot restarts.
+# Payment details are stored per-chat in a JSON file so they survive bot
+# restarts. When the multitenant panel launches this script it sets
+# BOT_DATA_DIR to a per-bot directory so tenants never share data.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PAYMENTS_FILE = os.path.join(BASE_DIR, "payments.json")
+DATA_DIR = os.environ.get("BOT_DATA_DIR") or BASE_DIR
+os.makedirs(DATA_DIR, exist_ok=True)
+PAYMENTS_FILE = os.path.join(DATA_DIR, "payments.json")
 
 
 def load_payments():

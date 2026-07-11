@@ -1,0 +1,245 @@
+/* Shared styles for the public + admin panels.
+   Minimalist, Atlassian-inspired: light surfaces, hairline borders,
+   3px radii, lozenge status chips. Headings: DM Sans. UI/body: Geist. */
+
+:root {
+  --bg: #fafbfc;
+  --surface: #ffffff;
+  --text: #172b4d;
+  --muted: #6b778c;
+  --faint: #97a0af;
+  --border: #dfe1e6;
+  --primary: #0052cc;
+  --primary-hover: #0747a6;
+  --focus: #4c9aff;
+  --subtle-bg: rgba(9, 30, 66, 0.04);
+  --subtle-bg-hover: rgba(9, 30, 66, 0.08);
+  --danger: #de350b;
+  --danger-dark: #bf2600;
+  --success: #006644;
+  --font-head: "DM Sans", "Geist", system-ui, sans-serif;
+  --font-body: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 14px/1.55 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- top nav ------------------------------------------------------------ */
+.nav {
+  height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+}
+.nav .brand {
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.nav .brand .mark {
+  width: 22px; height: 22px; border-radius: 5px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.nav .crumb { color: var(--faint); font-size: 14px; }
+.nav .section { color: var(--muted); font-size: 14px; font-weight: 500; }
+.nav .spacer { flex: 1; }
+.nav a.link {
+  color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500;
+  padding: 6px 10px; border-radius: 3px;
+}
+.nav a.link:hover { background: var(--subtle-bg); color: var(--text); }
+
+/* --- layout --------------------------------------------------------------*/
+main { max-width: 760px; margin: 0 auto; padding: 48px 24px 72px; }
+main.wide { max-width: 1000px; }
+
+h1 {
+  font-family: var(--font-head);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+h2 {
+  font-family: var(--font-head);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 40px 0 12px;
+}
+.lede { color: var(--muted); font-size: 15px; margin: 0 0 32px; max-width: 56ch; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 24px;
+}
+
+/* --- forms ---------------------------------------------------------------*/
+label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+input[type="text"], input[type="password"] {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 2px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 13.5px var(--font-mono);
+  transition: border-color 0.12s, background 0.12s;
+}
+input:focus { outline: none; border-color: var(--focus); background: var(--surface); }
+input::placeholder { color: var(--faint); font-family: var(--font-mono); }
+
+/* --- buttons -------------------------------------------------------------*/
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 3px;
+  font: 500 14px var(--font-body);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-subtle { background: var(--subtle-bg); color: var(--text); }
+.btn-subtle:hover:not(:disabled) { background: var(--subtle-bg-hover); }
+.btn-danger { background: transparent; color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: #ffebe6; color: var(--danger-dark); }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 13px; }
+
+/* --- lozenges (status chips) ----------------------------------------------*/
+.lozenge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+.lz-pending  { background: #fff0b3; color: #172b4d; }
+.lz-approved { background: #e3fcef; color: #006644; }
+.lz-live     { background: #e3fcef; color: #006644; }
+.lz-rejected { background: #ffebe6; color: #bf2600; }
+.lz-paused   { background: #dfe1e6; color: #42526e; }
+.lz-failed   { background: #ffebe6; color: #bf2600; }
+.lz-starting { background: #deebff; color: #0747a6; }
+
+/* --- result / message boxes ------------------------------------------------*/
+.msg {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 3px;
+  font-size: 13.5px;
+  display: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.msg.show { display: block; }
+.msg.err { border-color: #ffbdad; background: #ffebe6; color: #bf2600; }
+.msg .title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.msg .detail { color: var(--muted); margin-top: 4px; }
+
+/* --- tables ----------------------------------------------------------------*/
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child > td { border-bottom: 0; }
+tbody tr:hover { background: var(--bg); }
+td.mono, .mono { font-family: var(--font-mono); font-size: 12.5px; }
+td .bot-name { font-weight: 600; }
+td .sub { color: var(--faint); font-size: 12px; }
+.actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.dot.on { background: #36b37e; }
+.dot.off { background: var(--faint); }
+
+/* --- stat tiles --------------------------------------------------------------*/
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 0 0 24px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 14px 16px; }
+.tile .num { font-family: var(--font-head); font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.tile .lbl { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+
+/* --- steps (public "how it works") --------------------------------------------*/
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.step { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 16px; }
+.step .n {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--subtle-bg); color: var(--muted);
+  font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 10px;
+}
+.step h3 { font-family: var(--font-head); font-size: 14px; font-weight: 700; margin: 0 0 4px; }
+.step p { margin: 0; color: var(--muted); font-size: 13px; }
+
+/* --- log viewer -----------------------------------------------------------------*/
+pre.log {
+  margin: 0;
+  padding: 12px 14px;
+  background: #091e42;
+  color: #b3bac5;
+  font: 400 12px/1.6 var(--font-mono);
+  border-radius: 3px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+tr.logrow > td { background: var(--bg); padding: 12px 14px; }
+
+footer {
+  max-width: 760px; margin: 0 auto; padding: 0 24px 40px;
+  color: var(--faint); font-size: 12.5px;
+}
+.empty { padding: 40px; text-align: center; color: var(--muted); }

@@ -1,11 +1,14 @@
-# sb-telegram-bot
+# Ledger Bots — multitenant Telegram bot platform
 
-A simple Telegram group bot that:
+A multitenant platform around a Telegram group ledger bot. Anyone can submit
+their own bot token on the public panel (no sign-in); an administrator
+approves it on the admin panel; every approved bot then runs the **same
+shared bot code** (`bot.py`) as its own isolated process.
+
+## What each bot does
 
 - Adds up numbers/expressions posted in a chat and keeps a running total per group.
 - Stores payment details (Binance ID, USDT address, UPI, etc.) per chat.
-
-## Commands
 
 | Command | Description |
 | --- | --- |
@@ -16,53 +19,53 @@ A simple Telegram group bot that:
 | `/payment` (or `/payments`) | Show all saved payment details for this chat. |
 | `/delpayment <method>` | Remove a saved payment method. |
 
-### Payment examples
-
-```
-/setpayment binance 123456789
-/setpayment usdt-trc20 TXxxxxxxxxxxxxxxxxxxxx
-/setpayment upi name@bank
-/payment
-```
-
-Payment details are stored per chat in `payments.json` (created next to the
-script, git-ignored) so they survive restarts.
-
 ## Setup
 
 ```bash
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt
-export BOT_TOKEN="<your-telegram-bot-token>"
-venv/bin/python bot.py
+PANEL_PASSWORD="choose-a-strong-password" python3 panel.py --host 0.0.0.0 --port 8080
 ```
 
-The bot token is read from the `BOT_TOKEN` (or `TELEGRAM_BOT_TOKEN`)
-environment variable — it is never hard-coded.
+`panel.py` uses only the Python standard library; the venv is only needed by
+the bots themselves (`python-telegram-bot`, `sympy`).
 
-## Web control panel (enter the token in a browser)
+## Panels
 
-Instead of setting `BOT_TOKEN` yourself, run the control panel and paste the
-token into a web page. It validates the token against Telegram, then launches
-`bot.py` for you (Start / Stop / status + recent log).
+- **Public panel — `http://<server>:8080/`** (no sign-in)
+  Users paste a bot token from `@BotFather`. The token is validated against
+  Telegram's `getMe`, then queued as **pending**. The same token can be pasted
+  again any time to check status (pending / live / rejected / paused).
 
-```bash
-# deps for the bot must be installed in ./venv (see Setup above)
-PANEL_PASSWORD="choose-a-strong-password" python3 control.py --host 0.0.0.0 --port 8080
-```
+- **Admin panel — `http://<server>:8080/admin`**
+  Protected by HTTP Basic Auth (username `admin`, password from
+  `--password` / `PANEL_PASSWORD`, else a random one printed at startup).
+  Admins see all submissions and can **Approve**, **Reject**, **Pause**,
+  **Resume**, **Delete**, and view each bot's recent log.
 
-- `control.py` uses only the Python standard library — no extra deps.
-- Open `http://<server-ip>:8080`, log in (username `admin`, the password you
-  set), paste the token, click **Start bot**.
-- The token is passed to `bot.py` via its environment and is **never written to
-  disk**.
-- Protected by HTTP Basic Auth. If `--password`/`PANEL_PASSWORD` is omitted, a
-  random password is printed at startup.
+## How the multitenancy works
 
-**Security:** this is plain HTTP with no TLS, so the login and token travel in
-cleartext. Only expose port 8080 on a trusted network, or keep it on localhost
-and reach it through an SSH tunnel:
+- Approved bots each run as their own `bot.py` subprocess with `BOT_TOKEN`
+  and `BOT_DATA_DIR` set in the environment — all bots share one codebase,
+  but each has an isolated data directory (`data/bots/<id>/`) for its
+  `payments.json` and `bot.log`.
+- The registry lives in `data/panel.db` (SQLite). Tokens are stored there so
+  approved bots can be restarted after a reboot — **keep `data/` private**
+  (it is git-ignored).
+- A monitor thread restarts approved bots that crash. Five rapid crashes in a
+  row mark the bot **Failed** (an admin can Retry after fixing the cause,
+  e.g. a revoked token).
+- Re-submitting a regenerated token for the same bot username replaces the
+  stale token and keeps the bot's status.
 
-```bash
-ssh -L 8080:localhost:8080 user@server   # then open http://localhost:8080
-```
+Running `bot.py` directly still works for a single bot:
+`BOT_TOKEN=... venv/bin/python bot.py` (data is stored next to the script
+unless `BOT_DATA_DIR` is set).
+
+## Security notes
+
+- Plain HTTP, no TLS: logins and tokens travel in cleartext. Expose the port
+  only on a trusted network, put a TLS reverse proxy in front, or tunnel:
+  `ssh -L 8080:localhost:8080 user@server`.
+- Public submissions are rate-limited per IP and validated against Telegram
+  before being stored.
