@@ -16,16 +16,17 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
-# Running total for each group
+# Running total for each group, persisted to disk so it survives restarts.
 group_totals = {}
 
-# Payment details are stored per-chat in a JSON file so they survive bot
-# restarts. When the multitenant panel launches this script it sets
-# BOT_DATA_DIR to a per-bot directory so tenants never share data.
+# Payment details and running totals are stored per-chat in JSON files so
+# they survive bot restarts. When the multitenant panel launches this script
+# it sets BOT_DATA_DIR to a per-bot directory so tenants never share data.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("BOT_DATA_DIR") or BASE_DIR
 os.makedirs(DATA_DIR, exist_ok=True)
 PAYMENTS_FILE = os.path.join(DATA_DIR, "payments.json")
+TOTALS_FILE = os.path.join(DATA_DIR, "totals.json")
 
 
 def load_payments():
@@ -48,8 +49,30 @@ def save_payments(data):
     os.replace(tmp, PAYMENTS_FILE)
 
 
+def load_totals():
+    """Load {chat_id: total} from disk, tolerating a missing/bad file.
+    JSON keys are strings, so chat ids are converted back to int here."""
+    try:
+        with open(TOTALS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return {int(k): v for k, v in data.items()}
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        pass
+    return {}
+
+
+def save_totals(data):
+    """Write running totals atomically so a crash mid-write can't corrupt the file."""
+    tmp = TOTALS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({str(k): v for k, v in data.items()}, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, TOTALS_FILE)
+
+
 # Loaded once at startup; JSON keys are strings, so chat ids are stored as str.
 payment_details = load_payments()
+group_totals = load_totals()
 
 
 # --------------------------------------------------------------------------
@@ -118,6 +141,7 @@ async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total = before + now
     group_totals[chat_id] = total
+    save_totals(group_totals)
 
     await update.message.reply_text(
         f"before: {before}\n"
@@ -134,6 +158,7 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     previous = group_totals.get(chat_id, 0)
     group_totals[chat_id] = 0
+    save_totals(group_totals)
 
     await update.message.reply_text(
         f"✅ Paid: {previous}\n"
