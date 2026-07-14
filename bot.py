@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -74,6 +75,9 @@ def save_totals(data):
 payment_details = load_payments()
 group_totals = load_totals()
 
+# A plain amount on its own line, e.g. "500", "-200" or "1500.50".
+NUMBER_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
+
 
 # --------------------------------------------------------------------------
 # Authorized users — set per-bot by the admin panel via BOT_AUTHORIZED_USERS
@@ -124,9 +128,11 @@ async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = content.splitlines()
 
-    # Only treat the message as an entry if it matches the expected
-    # 5-or-6-line schema. Anything else is ignored.
-    if len(lines) not in (5, 6):
+    # A message is an entry if it matches the expected 5-or-6-line schema,
+    # or if it is a single line that is entirely a number. Anything else
+    # is ignored.
+    single_number = len(lines) == 1 and NUMBER_RE.fullmatch(lines[0].strip())
+    if not single_number and len(lines) not in (5, 6):
         return
 
     first_line = lines[0].strip()
@@ -237,6 +243,15 @@ async def del_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"No payment entry for '{method}'.")
 
 
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reply with the sender's Telegram user ID. Deliberately not gated by
+    is_authorized: it exists so people can find the ID an owner must add to
+    the bot's allowed-users list."""
+    await update.message.reply_text(
+        f"🪪 Your Telegram user ID: {update.effective_user.id}"
+    )
+
+
 def main():
     token = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -252,6 +267,7 @@ def main():
     app.add_handler(CommandHandler("payments", show_payment))
     app.add_handler(CommandHandler("delpayment", del_payment))
     app.add_handler(CommandHandler("paid", paid))
+    app.add_handler(CommandHandler("myid", myid))
     app.add_handler(
         MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.CAPTION, calculate)
     )

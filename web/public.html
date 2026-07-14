@@ -72,12 +72,14 @@
     <table>
       <thead><tr><th style="width:38%">Command</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td class="mono">&lt;5 or 6 line message&gt;</td><td>A message with exactly 5 or 6 lines is treated as an entry: the first line is read as the amount and added to the group's running total.</td></tr>
+        <tr><td class="mono">&lt;amount&gt;</td><td>A message that is just a number (e.g. <span class="mono">500</span>, <span class="mono">-200</span>, <span class="mono">1500.50</span>) is booked as an entry and added to the group's running total. Negative amounts subtract.</td></tr>
+        <tr><td class="mono">&lt;5 or 6 line message&gt;</td><td>A message with exactly 5 or 6 lines is treated as an entry: the first line is read as the amount and added to the group's running total. Works on photo captions too.</td></tr>
         <tr><td class="mono">0</td><td>Show the current remaining amount.</td></tr>
         <tr><td class="mono">/paid</td><td>Mark the running total as paid and reset it to 0.</td></tr>
-        <tr><td class="mono">/setpayment &lt;method&gt; &lt;details&gt;</td><td>Save or update a payment method for the chat.</td></tr>
-        <tr><td class="mono">/payment</td><td>Show all saved payment details for the chat.</td></tr>
+        <tr><td class="mono">/setpayment &lt;method&gt; &lt;details&gt;</td><td>Save or update a payment method for the chat, e.g. <span class="mono">/setpayment binance 123456789</span>.</td></tr>
+        <tr><td class="mono">/payment</td><td>Show all saved payment details for the chat. <span class="mono">/payments</span> works too.</td></tr>
         <tr><td class="mono">/delpayment &lt;method&gt;</td><td>Remove a saved payment method.</td></tr>
+        <tr><td class="mono">/myid</td><td>Reply with your Telegram user ID — use it to fill in the allowed-users list above. Works even if you're not on the list yet.</td></tr>
       </tbody>
     </table>
   </div>
