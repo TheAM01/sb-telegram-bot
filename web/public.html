@@ -28,6 +28,15 @@
   <div class="card">
     <label for="token">Bot token &nbsp;·&nbsp; from @BotFather</label>
     <input id="token" type="text" placeholder="123456789:AA…" autocomplete="off" spellcheck="false">
+
+    <label for="users" style="margin-top:14px;">Allowed user IDs &nbsp;·&nbsp; optional</label>
+    <textarea id="users" rows="2" placeholder="e.g. 111111111, 222222222 — leave blank to allow everyone" spellcheck="false"></textarea>
+    <div class="sub" style="margin-top:4px;">
+      Only these Telegram user IDs will be able to use your bot. Don't know a
+      user's ID? Have them message <span class="mono">/myid</span> in the
+      group, or use a bot like <span class="mono">@userinfobot</span>.
+    </div>
+
     <div style="display:flex; gap:8px; margin-top:14px;">
       <button id="submitBtn" class="btn btn-primary">Submit for approval</button>
       <button id="statusBtn" class="btn btn-subtle">Check status</button>
@@ -46,8 +55,9 @@
     <div class="step">
       <span class="n">2</span>
       <h3>Submit the token</h3>
-      <p>Paste it above. We verify it with Telegram and queue it for review.
-      Check back any time with the same token.</p>
+      <p>Paste it above, along with the user IDs you want to allow (optional).
+      We verify the token with Telegram and queue it for review. Check back
+      any time with the same token.</p>
     </div>
     <div class="step">
       <span class="n">3</span>
@@ -62,7 +72,7 @@
     <table>
       <thead><tr><th style="width:38%">Command</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td class="mono">&lt;numbers / expressions&gt;</td><td>Any message with numbers or math (one per line) is added to the group's running total.</td></tr>
+        <tr><td class="mono">&lt;5 or 6 line message&gt;</td><td>A message with exactly 5 or 6 lines is treated as an entry: the first line is read as the amount and added to the group's running total.</td></tr>
         <tr><td class="mono">0</td><td>Show the current remaining amount.</td></tr>
         <tr><td class="mono">/paid</td><td>Mark the running total as paid and reset it to 0.</td></tr>
         <tr><td class="mono">/setpayment &lt;method&gt; &lt;details&gt;</td><td>Save or update a payment method for the chat.</td></tr>
@@ -75,12 +85,13 @@
 
 <footer>
   Your token is verified with Telegram and stored only so your bot can be
-  started for you. Each bot's data is isolated from every other bot.
+  started for you. Each bot's data — including its allowed-user list — is
+  isolated from every other bot.
 </footer>
 
 <script>
 const $ = id => document.getElementById(id);
-const tokenInput = $('token'), msg = $('msg');
+const tokenInput = $('token'), usersInput = $('users'), msg = $('msg');
 const submitBtn = $('submitBtn'), statusBtn = $('statusBtn');
 
 const STATUS_TEXT = {
@@ -123,6 +134,12 @@ function showBot(bot, already) {
   d.className = 'detail';
   d.textContent = (already ? 'This bot was already submitted. ' : '') + detail;
   msg.appendChild(d);
+  const u = document.createElement('div');
+  u.className = 'detail';
+  u.textContent = bot.authorized_users
+    ? 'Allowed users: ' + bot.authorized_users
+    : 'Allowed users: everyone (no restriction set)';
+  msg.appendChild(u);
 }
 
 function busy(b) { submitBtn.disabled = statusBtn.disabled = b; }
@@ -137,8 +154,12 @@ async function call(method, url, body) {
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await r.json();
-    if (data.ok) showBot(data.bot, data.already);
-    else show('err', 'Something went wrong', data.error || 'Request failed');
+    if (data.ok) {
+      showBot(data.bot, data.already);
+      if (data.bot.authorized_users !== undefined) usersInput.value = data.bot.authorized_users;
+    } else {
+      show('err', 'Something went wrong', data.error || 'Request failed');
+    }
   } catch (e) {
     show('err', 'Network error', String(e));
   } finally {
@@ -152,7 +173,11 @@ function token() {
   return t;
 }
 
-submitBtn.onclick = () => { const t = token(); if (t) call('POST', '/api/submit', { token: t }); };
+// Submitting again with the same token updates its allowed-users list.
+submitBtn.onclick = () => {
+  const t = token();
+  if (t) call('POST', '/api/submit', { token: t, users: usersInput.value });
+};
 statusBtn.onclick = () => { const t = token(); if (t) call('GET', '/api/status?token=' + encodeURIComponent(t)); };
 tokenInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
 </script>

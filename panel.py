@@ -75,6 +75,13 @@ def db_init():
                  decided_at   TEXT
                )"""
         )
+        # Migration for DBs created before authorized_users existed.
+        try:
+            conn.execute(
+                "ALTER TABLE bots ADD COLUMN authorized_users TEXT NOT NULL DEFAULT ''"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 def q(sql, args=()):
@@ -177,6 +184,7 @@ class Manager:
             env = dict(os.environ)
             env["BOT_TOKEN"] = bot["token"]
             env["BOT_DATA_DIR"] = d
+            env["BOT_AUTHORIZED_USERS"] = bot["authorized_users"] or ""
             proc = subprocess.Popen(
                 [bot_python(), BOT_SCRIPT],
                 env=env, stdout=logf, stderr=subprocess.STDOUT, cwd=BASE_DIR,
@@ -273,12 +281,26 @@ def mask_token(token):
     return token[:6] + "…" + token[-4:] if len(token) > 12 else "…"
 
 
+def parse_user_ids(raw):
+    """Parse a comma/whitespace-separated list of Telegram user ids.
+    Returns (ok, normalized_csv_or_error)."""
+    ids = []
+    for part in re.split(r"[,\s]+", str(raw or "").strip()):
+        if not part:
+            continue
+        if not USER_ID_RE.match(part):
+            return False, "Invalid user id: %s" % part
+        ids.append(part)
+    return True, ",".join(ids)
+
+
 def public_view(bot):
     return {
         "username": bot["username"],
         "status": bot["status"],
         "running": manager.is_running(bot["id"]),
         "submitted_at": bot["submitted_at"],
+        "authorized_users": bot["authorized_users"] or "",
     }
 
 
@@ -292,11 +314,17 @@ def admin_view(bot):
         "uptime": manager.uptime(bot["id"]),
         "submitted_at": bot["submitted_at"],
         "decided_at": bot["decided_at"],
+        "authorized_users": bot["authorized_users"] or "",
     }
 
 
 ADMIN_ACTION_RE = re.compile(r"^/api/admin/bots/(\d+)/(approve|reject|pause|delete)$")
 ADMIN_LOG_RE = re.compile(r"^/api/admin/bots/(\d+)/log$")
+ADMIN_USERS_RE = re.compile(r"^/api/admin/bots/(\d+)/users$")
+
+# One Telegram user id per line/comma, optionally negative (not expected for
+# users but harmless to allow).
+USER_ID_RE = re.compile(r"^-?\d+$")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -399,6 +427,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._deny()
             return self._handle_admin_action(int(m.group(1)), m.group(2))
 
+        m = ADMIN_USERS_RE.match(path)
+        if m:
+            if not self._authed():
+                return self._deny()
+            return self._handle_admin_users(int(m.group(1)))
+
         self._send({"error": "not found"}, 404)
 
     # --- public: submit a token ---------------------------------------------
@@ -408,17 +442,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(
                 {"ok": False, "error": "Too many submissions — try again later."}, 429)
 
-        token = str(self._read_json().get("token", "")).strip()
+        body = self._read_json()
+        token = str(body.get("token", "")).strip()
         if not TOKEN_RE.match(token):
             return self._send(
                 {"ok": False,
                  "error": "That doesn't look like a bot token. Get one from @BotFather "
                           "(format: 123456789:AA…)."}, 400)
 
+        ok_users, users_result = parse_user_ids(body.get("users", ""))
+        if not ok_users:
+            return self._send({"ok": False, "error": users_result}, 400)
+        authorized_users = users_result
+
+        # Already submitted with this exact token -> treat as an update to
+        # the allowed-users list (the owner is re-submitting to change it).
         existing = q("SELECT * FROM bots WHERE token = ?", (token,))
         if existing:
-            return self._send({"ok": True, "already": True,
-                               "bot": public_view(existing[0])})
+            bot = existing[0]
+            ex("UPDATE bots SET authorized_users = ? WHERE id = ?",
+               (authorized_users, bot["id"]))
+            bot = get_bot(bot["id"])
+            if bot["status"] == "approved":
+                manager.stop(bot["id"])
+                manager.start(bot)
+            return self._send({"ok": True, "already": True, "bot": public_view(bot)})
 
         ok, info = telegram_get_me(token)
         if not ok:
@@ -426,12 +474,13 @@ class Handler(BaseHTTPRequestHandler):
         username = info
 
         # If the same bot was re-submitted with a regenerated token, replace
-        # the stale token but keep the bot's status.
+        # the stale token and refresh the allowed-users list, keep status.
         same_bot = q("SELECT * FROM bots WHERE username = ?", (username,))
         if same_bot:
             bot = same_bot[0]
             manager.stop(bot["id"])
-            ex("UPDATE bots SET token = ? WHERE id = ?", (token, bot["id"]))
+            ex("UPDATE bots SET token = ?, authorized_users = ? WHERE id = ?",
+               (token, authorized_users, bot["id"]))
             bot = get_bot(bot["id"])
             if bot["status"] == "approved":
                 manager.start(bot)
@@ -439,8 +488,8 @@ class Handler(BaseHTTPRequestHandler):
                                "bot": public_view(bot)})
 
         try:
-            ex("INSERT INTO bots (token, username, status, submitted_at) "
-               "VALUES (?, ?, 'pending', ?)", (token, username, now()))
+            ex("INSERT INTO bots (token, username, status, submitted_at, authorized_users) "
+               "VALUES (?, ?, 'pending', ?, ?)", (token, username, now(), authorized_users))
         except sqlite3.IntegrityError:
             pass  # concurrent duplicate submit
         bot = q("SELECT * FROM bots WHERE token = ?", (token,))[0]
@@ -484,6 +533,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._send({"ok": True})
 
         return self._send({"ok": False, "error": "Unknown action"}, 400)
+
+    # --- admin: authorized users (manual override) --------------------------
+    def _handle_admin_users(self, bot_id):
+        bot = get_bot(bot_id)
+        if not bot:
+            return self._send({"ok": False, "error": "Bot not found"}, 404)
+
+        ok_users, users_result = parse_user_ids(self._read_json().get("users", ""))
+        if not ok_users:
+            return self._send({"ok": False, "error": users_result}, 400)
+
+        ex("UPDATE bots SET authorized_users = ? WHERE id = ?", (users_result, bot_id))
+        bot = get_bot(bot_id)
+
+        # Restart the running bot so it picks up the new list immediately.
+        if bot["status"] == "approved":
+            manager.stop(bot_id)
+            manager.start(bot)
+
+        return self._send({"ok": True, "bot": admin_view(bot)})
 
 
 # --------------------------------------------------------------------------

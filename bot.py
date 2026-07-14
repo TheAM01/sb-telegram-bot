@@ -52,7 +52,34 @@ def save_payments(data):
 payment_details = load_payments()
 
 
+# --------------------------------------------------------------------------
+# Authorized users — set per-bot by the admin panel via BOT_AUTHORIZED_USERS
+# (comma-separated Telegram user ids). Empty/unset = no restriction.
+# --------------------------------------------------------------------------
+def _parse_authorized_users():
+    raw = os.environ.get("BOT_AUTHORIZED_USERS", "").strip()
+    if not raw:
+        return set()
+    ids = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if part and (part.lstrip("-").isdigit()):
+            ids.add(int(part))
+    return ids
+
+
+AUTHORIZED_USERS = _parse_authorized_users()
+
+
+def is_authorized(user_id):
+    # No list configured for this bot -> no restriction.
+    return not AUTHORIZED_USERS or user_id in AUTHORIZED_USERS
+
+
 async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.effective_user.id):
+        return
+
     chat_id = update.effective_chat.id
 
     # Read text or caption
@@ -72,21 +99,19 @@ async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    now = 0
+    lines = content.splitlines()
 
-    # Read every line separately
-    for line in content.splitlines():
-        line = line.strip()
+    # Only treat the message as an entry if it matches the expected
+    # 5-or-6-line schema. Anything else is ignored.
+    if len(lines) not in (5, 6):
+        return
 
-        if not line:
-            continue
+    first_line = lines[0].strip()
 
-        try:
-            value = float(sympify(line))
-            now += value
-        except Exception:
-            # Ignore text lines
-            continue
+    try:
+        now = float(sympify(first_line))
+    except Exception:
+        return
 
     if now == 0:
         return
@@ -102,6 +127,9 @@ async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.effective_user.id):
+        return
+
     chat_id = update.effective_chat.id
 
     previous = group_totals.get(chat_id, 0)
@@ -115,6 +143,9 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Add or update a payment method for this chat, e.g. /setpayment binance 123456789"""
+    if not is_authorized(update.effective_user.id):
+        return
+
     chat_id = str(update.effective_chat.id)
 
     if len(context.args) < 2:
@@ -139,6 +170,9 @@ async def set_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show all payment methods stored for this chat."""
+    if not is_authorized(update.effective_user.id):
+        return
+
     chat_id = str(update.effective_chat.id)
     chat_methods = payment_details.get(chat_id, {})
 
@@ -158,6 +192,9 @@ async def show_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def del_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Remove a stored payment method, e.g. /delpayment binance"""
+    if not is_authorized(update.effective_user.id):
+        return
+
     chat_id = str(update.effective_chat.id)
 
     if not context.args:

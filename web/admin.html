@@ -40,11 +40,12 @@
           <th>Token</th>
           <th>Submitted</th>
           <th>Status</th>
+          <th>Authorized users</th>
           <th style="text-align:right">Actions</th>
         </tr>
       </thead>
       <tbody id="rows">
-        <tr><td colspan="5" class="empty">Loading…</td></tr>
+        <tr><td colspan="6" class="empty">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -99,13 +100,17 @@ function actionButtons(bot) {
   return b.join('');
 }
 
+function escAttr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
 function render(bots) {
   document.getElementById('nPending').textContent = bots.filter(b => b.status === 'pending').length;
   document.getElementById('nRunning').textContent = bots.filter(b => b.running).length;
   document.getElementById('nTotal').textContent = bots.length;
 
   if (!bots.length) {
-    rows.innerHTML = '<tr><td colspan="5" class="empty">No bots submitted yet. Share the public panel link to get started.</td></tr>';
+    rows.innerHTML = '<tr><td colspan="6" class="empty">No bots submitted yet. Share the public panel link to get started.</td></tr>';
     return;
   }
 
@@ -120,10 +125,18 @@ function render(bots) {
         <td class="mono">${bot.token_masked}</td>
         <td><span class="sub">${bot.submitted_at}</span></td>
         <td>${lozenge(bot)} ${up}</td>
+        <td>
+          <div class="users-cell">
+            <input type="text" class="users-input" data-id="${bot.id}"
+                   value="${escAttr(bot.authorized_users)}"
+                   placeholder="all users (unset)">
+            <button class="btn btn-sm btn-subtle" data-act="saveusers" data-id="${bot.id}">Save</button>
+          </div>
+        </td>
         <td><div class="actions">${actionButtons(bot)}</div></td>
       </tr>`;
     if (openLogs.has(bot.id)) {
-      html += `<tr class="logrow" data-log-for="${bot.id}"><td colspan="5"><pre class="log" id="log-${bot.id}">Loading…</pre></td></tr>`;
+      html += `<tr class="logrow" data-log-for="${bot.id}"><td colspan="6"><pre class="log" id="log-${bot.id}">Loading…</pre></td></tr>`;
     }
     return html;
   }).join('');
@@ -143,6 +156,8 @@ async function loadLog(id) {
 }
 
 async function refresh() {
+  // Don't clobber an in-progress edit.
+  if (document.activeElement && document.activeElement.classList.contains('users-input')) return;
   try {
     const r = await fetch('/api/admin/bots', { cache: 'no-store' });
     const data = await r.json();
@@ -161,6 +176,29 @@ rows.addEventListener('click', async e => {
     refresh();
     return;
   }
+
+  if (act === 'saveusers') {
+    const input = rows.querySelector(`.users-input[data-id="${id}"]`);
+    busy = true;
+    el.disabled = true;
+    try {
+      const r = await fetch(`/api/admin/bots/${id}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ users: input.value }),
+      });
+      const data = await r.json();
+      if (!data.ok) alert(data.error || 'Save failed');
+    } catch (err) {
+      alert('Request failed: ' + err);
+    } finally {
+      busy = false;
+      el.disabled = false;
+      refresh();
+    }
+    return;
+  }
+
   if (confirmMsg && !window.confirm(confirmMsg)) return;
 
   busy = true;
