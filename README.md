@@ -9,15 +9,20 @@ admin panel; every approved bot then runs the **same shared bot code**
 ## What each bot does
 
 - Reads messages that are exactly **5 or 6 lines** long as an entry: the
-  first line is parsed as the amount and added to the group's running total
-  (lines 2–6 are ignored). Messages of any other length are ignored.
+  **last** line is the price and the earlier lines are ignored. The price must
+  be a bare number — a last line carrying any text (e.g. `10800 CP`, which is
+  COD points) means the message isn't an entry and is ignored. Messages of any
+  other length are ignored.
+- The sign on the amount decides the direction: `500` and `+500` both **add**
+  500 to the running total, `-500` **subtracts** 500.
 - Only replies to Telegram user IDs on the bot's **allowed-users list** (set
   at submission time on the public panel). Leave it blank to allow everyone.
 - Stores payment details (Binance ID, USDT address, UPI, etc.) per chat.
 
 | Command | Description |
 | --- | --- |
-| `<5 or 6 line message>` | First line is read as the amount and added to the running total. |
+| `<5 or 6 line message>` | Last line is read as the price and applied to the running total. Must be a bare number; `10800 CP` is not a price. |
+| `<number>` | A message that is just a number: `500`/`+500` adds, `-500` subtracts. |
 | `0` | Show the current remaining amount. |
 | `/paid` | Mark the running total as paid and reset it to 0. |
 | `/setpayment <method> <details>` | Save/update a payment method. |

@@ -10,7 +10,6 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from sympy import sympify
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -75,8 +74,23 @@ def save_totals(data):
 payment_details = load_payments()
 group_totals = load_totals()
 
-# A plain amount on its own line, e.g. "500", "-200" or "1500.50".
-NUMBER_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
+# An amount on its own line, e.g. "500", "+500", "-200" or "1500.50".
+# The sign is what decides the direction: bare and "+" add, "-" subtracts.
+# Anything else on the line (e.g. "10800 CP") is not an amount.
+NUMBER_RE = re.compile(r"([+-]?)(\d+(?:\.\d+)?)")
+
+
+def parse_amount(line):
+    """Return the signed amount on `line`, or None if the line isn't purely a
+    number. "500" and "+500" are +500; "-500" is -500. A line with any other
+    text — most importantly a COD-points line like "10800 CP" — is not an
+    amount and yields None."""
+    m = NUMBER_RE.fullmatch(line.strip())
+    if not m:
+        return None
+    sign, digits = m.groups()
+    value = float(digits)
+    return -value if sign == "-" else value
 
 
 # --------------------------------------------------------------------------
@@ -126,23 +140,22 @@ async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Trailing blank lines shouldn't change the shape of the message.
     lines = content.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
 
-    # A message is an entry if it matches the expected 5-or-6-line schema,
-    # or if it is a single line that is entirely a number. Anything else
-    # is ignored.
-    single_number = len(lines) == 1 and NUMBER_RE.fullmatch(lines[0].strip())
-    if not single_number and len(lines) not in (5, 6):
+    # A message is an entry if it is a single line that is entirely a number,
+    # or if it matches the expected 5-or-6-line schema. Anything else is
+    # ignored.
+    if len(lines) not in (1, 5, 6):
         return
 
-    first_line = lines[0].strip()
-
-    try:
-        now = float(sympify(first_line))
-    except Exception:
-        return
-
-    if now == 0:
+    # The price is the last line, and it is a bare number. If the last line
+    # carries any text it isn't a price (e.g. "10800 CP" is COD points), so
+    # the message is ignored.
+    now = parse_amount(lines[-1])
+    if now is None or now == 0:
         return
 
     total = before + now
