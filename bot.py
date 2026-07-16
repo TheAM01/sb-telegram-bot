@@ -1,5 +1,8 @@
+import ast
 import json
 import logging
+import math
+import operator
 import os
 import re
 from telegram import Update
@@ -74,23 +77,77 @@ def save_totals(data):
 payment_details = load_payments()
 group_totals = load_totals()
 
-# An amount on its own line, e.g. "500", "+500", "-200" or "1500.50".
-# The sign is what decides the direction: bare and "+" add, "-" subtracts.
-# Anything else on the line (e.g. "10800 CP") is not an amount.
-NUMBER_RE = re.compile(r"([+-]?)(\d+(?:\.\d+)?)")
+# A plain amount on its own line, e.g. "500", "+500", "-200" or "1500.50".
+# The sign decides the direction: bare and "+" add, "-" subtracts.
+NUMBER_RE = re.compile(r"[+-]?\d+(?:\.\d+)?")
+
+# An amount line may also be a calculation: "5+2", "5*7", "(100-40)/2".
+# Only digits, the four operators, parentheses, a decimal point and spaces
+# are allowed. This is what rejects a COD-points line like "10800 CP": the
+# letters aren't in the set, so it never reaches the evaluator.
+EXPRESSION_RE = re.compile(r"[0-9+\-*/(). ]+")
+
+# Typed on phone keyboards in place of / and *.
+SYMBOL_ALIASES = {"÷": "/", "×": "*", "−": "-"}
+
+_BINARY_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+}
+_UNARY_OPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+
+
+def _eval_node(node):
+    """Evaluate one node of a parsed expression, allowing only numeric
+    literals and + - * / (binary and unary). Anything else — a name, a call,
+    ** , a comparison — raises, so it is never evaluated. Deliberately not
+    eval()/sympify(): these lines come from untrusted group messages."""
+    if isinstance(node, ast.Expression):
+        return _eval_node(node.body)
+    if isinstance(node, ast.Constant):
+        # bool is an int subclass; "True" isn't an amount.
+        if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+            raise ValueError("not a number")
+        return float(node.value)
+    if isinstance(node, ast.BinOp):
+        op = _BINARY_OPS.get(type(node.op))
+        if op is None:
+            raise ValueError("operator not allowed")
+        return op(_eval_node(node.left), _eval_node(node.right))
+    if isinstance(node, ast.UnaryOp):
+        op = _UNARY_OPS.get(type(node.op))
+        if op is None:
+            raise ValueError("operator not allowed")
+        return op(_eval_node(node.operand))
+    raise ValueError("not an arithmetic expression")
 
 
 def parse_amount(line):
-    """Return the signed amount on `line`, or None if the line isn't purely a
-    number. "500" and "+500" are +500; "-500" is -500. A line with any other
-    text — most importantly a COD-points line like "10800 CP" — is not an
-    amount and yields None."""
-    m = NUMBER_RE.fullmatch(line.strip())
-    if not m:
+    """Return the signed amount on `line`, or None if the line isn't an amount.
+
+    The line is either a bare number ("500"/"+500" are +500, "-500" is -500)
+    or a calculation to work out first ("5+2" is 7, "5*7" is 35). A line
+    carrying any text — most importantly a COD-points line like "10800 CP" —
+    is not an amount and yields None."""
+    text = line.strip()
+    for symbol, plain in SYMBOL_ALIASES.items():
+        text = text.replace(symbol, plain)
+
+    if not text or not EXPRESSION_RE.fullmatch(text):
         return None
-    sign, digits = m.groups()
-    value = float(digits)
-    return -value if sign == "-" else value
+
+    try:
+        value = _eval_node(ast.parse(text, mode="eval"))
+    except (SyntaxError, ValueError, TypeError, ZeroDivisionError, OverflowError):
+        return None
+
+    if not math.isfinite(value):
+        return None
+    # Amounts are money; keep them at 2dp so 0.1+0.2 and 5/3 don't drag float
+    # noise into the running total.
+    return round(value, 2)
 
 
 # --------------------------------------------------------------------------
@@ -145,24 +202,30 @@ async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     while lines and not lines[-1].strip():
         lines.pop()
 
-    # A message is an entry if it is a single line that is entirely a number,
-    # or if it matches the expected 5-or-6-line schema. Anything else is
-    # ignored.
-    if len(lines) not in (1, 5, 6):
+    if not lines:
         return
 
-    # The price is the last line, and it is a bare number. If the last line
-    # carries any text it isn't a price (e.g. "10800 CP" is COD points), so
-    # the message is ignored.
-    now = parse_amount(lines[-1])
+    # Any message can be an entry, whatever its length: the price is the last
+    # line, either a bare number or a calculation to work out. Everything
+    # above it is ignored. If the last line carries any text it isn't a price
+    # (e.g. "10800 CP" is COD points), so the message is ignored.
+    price_line = lines[-1].strip()
+    now = parse_amount(price_line)
     if now is None or now == 0:
         return
 
-    total = before + now
+    total = round(before + now, 2)
     group_totals[chat_id] = total
     save_totals(group_totals)
 
+    reply = ""
+    # When the price was worked out rather than written down, show the sum so
+    # the group can check it.
+    if not NUMBER_RE.fullmatch(price_line):
+        reply += f"🧮 {price_line} = {now}\n"
+
     await update.message.reply_text(
+        reply +
         f"before: {before}\n"
         f"now: {now}\n"
         f"total: {total}"

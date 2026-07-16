@@ -8,21 +8,27 @@ admin panel; every approved bot then runs the **same shared bot code**
 
 ## What each bot does
 
-- Reads messages that are exactly **5 or 6 lines** long as an entry: the
-  **last** line is the price and the earlier lines are ignored. The price must
-  be a bare number — a last line carrying any text (e.g. `10800 CP`, which is
-  COD points) means the message isn't an entry and is ignored. Messages of any
-  other length are ignored.
+- Reads the **last line of any message** as the price; everything above it is
+  ignored, and the message can be any length. The price must be a bare number
+  or a calculation — a last line carrying any text (e.g. `10800 CP`, which is
+  COD points) means the message isn't an entry and is ignored.
+  **Note:** because there's no length rule, *any* message whose last line is
+  just a number is booked — a bare `2` in the chat moves the total.
 - The sign on the amount decides the direction: `500` and `+500` both **add**
   500 to the running total, `-500` **subtracts** 500.
+- The price can be a **calculation** instead of a number: `5+2` books 7, `5*7`
+  books 35, `(100-40)/2` books 30. Only `+`, `-`, `*` and `/` are supported
+  (`÷` and `×` work too); the result is shown in the reply and rounded to 2
+  decimal places.
 - Only replies to Telegram user IDs on the bot's **allowed-users list** (set
   at submission time on the public panel). Leave it blank to allow everyone.
 - Stores payment details (Binance ID, USDT address, UPI, etc.) per chat.
 
 | Command | Description |
 | --- | --- |
-| `<5 or 6 line message>` | Last line is read as the price and applied to the running total. Must be a bare number; `10800 CP` is not a price. |
-| `<number>` | A message that is just a number: `500`/`+500` adds, `-500` subtracts. |
+| `<any message>` | Last line is read as the price and applied to the running total. Must be a number or a calculation; `10800 CP` is not a price. |
+| `<number>` | `500`/`+500` adds, `-500` subtracts. |
+| `<calculation>` | A sum, e.g. `5+2` (books 7) or `5*7` (books 35). `+ - * /` only. |
 | `0` | Show the current remaining amount. |
 | `/paid` | Mark the running total as paid and reset it to 0. |
 | `/setpayment <method> <details>` | Save/update a payment method. |
