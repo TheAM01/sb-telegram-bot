@@ -31,6 +31,7 @@ admin panel; every approved bot then runs the **same shared bot code**
 | `<calculation>` | A sum, e.g. `5+2` (books 7) or `5*7` (books 35). `+ - * /` only. |
 | `0` | Show the current remaining amount. |
 | `/paid` | Mark the running total as paid and reset it to 0. |
+| `/undo` | Reverse the last change to the total — a booked entry or a `/paid` reset. Repeat to step further back (last 50 changes are kept). |
 | `/setpayment <method> <details>` | Save/update a payment method. |
 | `/payment` (or `/payments`) | Show all saved payment details for this chat. |
 | `/delpayment <method>` | Remove a saved payment method. |

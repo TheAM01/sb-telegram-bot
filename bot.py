@@ -30,6 +30,11 @@ DATA_DIR = os.environ.get("BOT_DATA_DIR") or BASE_DIR
 os.makedirs(DATA_DIR, exist_ok=True)
 PAYMENTS_FILE = os.path.join(DATA_DIR, "payments.json")
 TOTALS_FILE = os.path.join(DATA_DIR, "totals.json")
+HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
+
+# How many undoable steps to keep per chat. Old steps fall off the front, so
+# the file can't grow without bound in a busy group.
+HISTORY_LIMIT = 50
 
 
 def load_payments():
@@ -73,9 +78,44 @@ def save_totals(data):
     os.replace(tmp, TOTALS_FILE)
 
 
+def load_history():
+    """Load {chat_id: [step, ...]} from disk, tolerating a missing/bad file.
+    JSON keys are strings, so chat ids are converted back to int here."""
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return {
+                int(k): v for k, v in data.items() if isinstance(v, list)
+            }
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        pass
+    return {}
+
+
+def save_history(data):
+    """Write undo history atomically so a crash mid-write can't corrupt the file."""
+    tmp = HISTORY_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({str(k): v for k, v in data.items()}, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, HISTORY_FILE)
+
+
+def record_step(chat_id, kind, amount):
+    """Remember one undoable change to a chat's total.
+
+    `kind` is "entry" (an amount was booked, so undo subtracts it) or "paid"
+    (the total was reset, so undo restores `amount`)."""
+    steps = history.setdefault(chat_id, [])
+    steps.append({"kind": kind, "amount": amount})
+    del steps[:-HISTORY_LIMIT]
+    save_history(history)
+
+
 # Loaded once at startup; JSON keys are strings, so chat ids are stored as str.
 payment_details = load_payments()
 group_totals = load_totals()
+history = load_history()
 
 # A plain amount on its own line, e.g. "500", "+500", "-200" or "1500.50".
 # The sign decides the direction: bare and "+" add, "-" subtracts.
@@ -217,6 +257,7 @@ async def calculate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = round(before + now, 2)
     group_totals[chat_id] = total
     save_totals(group_totals)
+    record_step(chat_id, "entry", now)
 
     reply = ""
     # When the price was worked out rather than written down, show the sum so
@@ -241,10 +282,50 @@ async def paid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     previous = group_totals.get(chat_id, 0)
     group_totals[chat_id] = 0
     save_totals(group_totals)
+    record_step(chat_id, "paid", previous)
 
     await update.message.reply_text(
         f"✅ Paid: {previous}\n"
         f"💰 Remaining Amount: 0"
+    )
+
+
+async def undo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Reverse the last change to this chat's total — a booked entry or a
+    /paid reset. Repeatable: each /undo steps one further back."""
+    if not is_authorized(update.effective_user.id):
+        return
+
+    chat_id = update.effective_chat.id
+    steps = history.get(chat_id) or []
+
+    if not steps:
+        await update.message.reply_text("❌ Nothing to undo.")
+        return
+
+    step = steps.pop()
+    if not steps:
+        history.pop(chat_id, None)
+    save_history(history)
+
+    before = group_totals.get(chat_id, 0)
+    amount = step.get("amount", 0)
+
+    if step.get("kind") == "paid":
+        # /paid zeroed the total; undoing it puts the paid amount back.
+        total = amount
+        removed = f"↩️ Undid /paid of {amount}"
+    else:
+        total = round(before - amount, 2)
+        removed = f"↩️ Removed entry: {amount}"
+
+    group_totals[chat_id] = total
+    save_totals(group_totals)
+
+    await update.message.reply_text(
+        f"{removed}\n"
+        f"before: {before}\n"
+        f"total: {total}"
     )
 
 
@@ -343,6 +424,7 @@ def main():
     app.add_handler(CommandHandler("payments", show_payment))
     app.add_handler(CommandHandler("delpayment", del_payment))
     app.add_handler(CommandHandler("paid", paid))
+    app.add_handler(CommandHandler("undo", undo))
     app.add_handler(CommandHandler("myid", myid))
     app.add_handler(
         MessageHandler((filters.TEXT & ~filters.COMMAND) | filters.CAPTION, calculate)

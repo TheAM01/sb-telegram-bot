@@ -77,6 +77,7 @@
         <tr><td class="mono">&lt;any message&gt;</td><td>The <strong>last</strong> line of any message — of any length — is read as the price and applied to the group's running total; the lines above it are ignored. The price must be a bare number or a calculation: if the last line has any text with it (e.g. <span class="mono">10800 CP</span>, which is COD points), the message is ignored. Works on photo captions too.</td></tr>
         <tr><td class="mono">0</td><td>Show the current remaining amount.</td></tr>
         <tr><td class="mono">/paid</td><td>Mark the running total as paid and reset it to 0.</td></tr>
+        <tr><td class="mono">/undo</td><td>Reverse the last change to the running total — a booked entry or a <span class="mono">/paid</span> reset. Repeat it to step further back; the last 50 changes per chat are kept.</td></tr>
         <tr><td class="mono">/setpayment &lt;method&gt; &lt;details&gt;</td><td>Save or update a payment method for the chat, e.g. <span class="mono">/setpayment binance 123456789</span>.</td></tr>
         <tr><td class="mono">/payment</td><td>Show all saved payment details for the chat. <span class="mono">/payments</span> works too.</td></tr>
         <tr><td class="mono">/delpayment &lt;method&gt;</td><td>Remove a saved payment method.</td></tr>
